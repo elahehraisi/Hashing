@@ -6,10 +6,13 @@ from collections import defaultdict
 
 
 class HybridHashing:
-    def __init__(self, top_k, B, embedding_dim):
-        self.top_k = top_k  # Number of most frequent IDs to hash uniquely
-        self.B = B  # Size of the hash space for low-frequency IDs
-        self.embedding_dim = embedding_dim  # Dimensionality of the embeddings
+    def __init__(self, top_k, num_buckets, embedding_dim):
+        # Number of most frequent IDs to hash uniquely
+        self.top_k = top_k
+        # Size of the hash space for low-frequency IDs
+        self.num_buckets = num_buckets
+        # Dimensionality of the embeddings
+        self.embedding_dim = embedding_dim
 
         # Dictionary to map the top-K frequent IDs to their unique indices
         self.freq_dict = {}
@@ -18,7 +21,7 @@ class HybridHashing:
         self.top_k_embeddings = nn.Embedding(top_k, embedding_dim)
 
         # Embedding parameters for double hashing of low-frequency features (trainable)
-        self.low_freq_embeddings = nn.Embedding(B, embedding_dim)
+        self.low_freq_embeddings = nn.Embedding(num_buckets, embedding_dim)
 
     def find_top_k_frequent(self, data):
         """Find the top-K most frequent features (IDs) in the data."""
