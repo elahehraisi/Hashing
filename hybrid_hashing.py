@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from collections import defaultdict
+import hashlib
 
 
 class HybridHashing:
@@ -33,13 +34,13 @@ class HybridHashing:
         sorted_ids = sorted(frequency.items(), key=lambda x: x[1], reverse=True)
         self.freq_dict = {user_id: idx for idx, (user_id, _) in enumerate(sorted_ids[:self.top_k])}
 
-    def h1(self, user_id):
-        """First hash function for low-frequency IDs."""
-        return hash(user_id) % self.B
+    def hash_function_1(self, f):
+        """Applies the first hash function (h1) using MD5."""
+        return int(hashlib.md5(f.encode()).hexdigest(), 16) % self.num_buckets
 
-    def h2(self, user_id):
-        """Second hash function for low-frequency IDs."""
-        return (hash(user_id) // self.B) % self.B
+    def hash_function_2(self, f):
+        """Applies the second hash function (h2) using SHA1."""
+        return int(hashlib.sha1(f.encode()).hexdigest(), 16) % self.num_buckets
 
     def get_embedding(self, user_id):
         """Hybrid hashing to retrieve embedding."""
@@ -49,8 +50,8 @@ class HybridHashing:
             return self.top_k_embeddings(torch.tensor(unique_index))
         else:
             # Use double hashing for less frequent IDs
-            h1_code = self.h1(user_id)
-            h2_code = self.h2(user_id)
+            h1_code = self.hash_function_1(user_id)
+            h2_code = self.hash_function_2(user_id)
             E_h1 = self.low_freq_embeddings(torch.tensor(h1_code))
             E_h2 = self.low_freq_embeddings(torch.tensor(h2_code))
 
@@ -61,24 +62,29 @@ class HybridHashing:
 class SimpleModel(nn.Module):
     def __init__(self, embedding_dim):
         super(SimpleModel, self).__init__()
-        # Simple linear layer for prediction
-        self.fc = nn.Linear(embedding_dim, 1)  # Predict a single value (e.g., rating, score)
+        # Simple linear layer for prediction, predict a single value
+        self.fc = nn.Linear(embedding_dim, 1)
 
     def forward(self, x):
         return self.fc(x)
 
 
-# Example Training Data (user_id's and some labels, e.g., scores or ratings)
+# Example Training Data (user_id's and some labels)
 user_data = [1234, 5678, 1234, 9876, 1111, 1234, 2222, 5678, 3333, 2222, 4444]
 labels = torch.tensor([5, 3, 5, 2, 4, 5, 3, 3, 4, 3, 2], dtype=torch.float32)  # Example labels
 
 # Initialize HybridHashing with parameters
-top_k = 100  # Top 100 most frequent IDs get unique embeddings
-B = 1000  # Hash space for low-frequency IDs
-embedding_dim = 32  # Dimension of the embedding vector
+# Top 100 most frequent IDs get unique embeddings
+top_k = 100
+
+# Hash space for low-frequency IDs
+num_buckets = 100
+
+# Dimension of the embedding vector
+embedding_dim = 32
 
 # Instantiate the hybrid hashing model
-hybrid_hashing = HybridHashing(top_k, B, embedding_dim)
+hybrid_hashing = HybridHashing(top_k, num_buckets, embedding_dim)
 
 # Find the top-K frequent user IDs in the data
 hybrid_hashing.find_top_k_frequent(user_data)
@@ -102,7 +108,7 @@ for epoch in range(epochs):
         prediction = model(embedding)
 
         # Compute loss
-        loss = criterion(prediction, labels[i].unsqueeze(0))  # Single label per user
+        loss = criterion(prediction, labels[i].unsqueeze(0))
 
         # Backpropagation
         optimizer.zero_grad()
