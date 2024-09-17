@@ -18,8 +18,11 @@ class CompositionalEmbedding(nn.Module):
         # Collect sub-embeddings from each partition
         embeddings = [sub_emb(indices) for sub_emb in self.sub_embeddings]
 
-        # Concatenate sub-embeddings to form the final embedding
-        composed_embedding = torch.cat(embeddings, dim=-1)
+        # Perform element-wise multiplication instead of concatenation
+        composed_embedding = embeddings[0]
+        for emb in embeddings[1:]:
+            # Element-wise multiplication
+            composed_embedding = composed_embedding * emb
 
         return composed_embedding
 
@@ -40,10 +43,14 @@ class SimpleModel(nn.Module):
 
 
 # Hyperparameters
-num_users = 1000  # Total number of users
-embedding_dim = 64  # Size of the final user embedding
-num_partitions = 4  # Number of partitions to divide the embedding into
-output_dim = 1  # Output dimension (for regression or binary classification)
+# Total number of users
+num_users = 1000
+# Size of the final user embedding
+embedding_dim = 32
+# Number of partitions to divide the embedding into, take >=3
+num_partitions = 4
+# Output dimension (for regression or binary classification)
+output_dim = 1
 
 # Create model, loss function, and optimizer
 model = SimpleModel(num_users, embedding_dim, num_partitions, output_dim)
