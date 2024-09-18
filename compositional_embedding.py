@@ -2,88 +2,136 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+class ComplementaryPartitionEmbedding(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim, partition_sizes, operation="concat"):
+        super(ComplementaryPartitionEmbedding, self).__init__()
+        # List containing sizes for each partition
+        self.partition_sizes = partition_sizes
+        # Total number of users
+        self.num_embeddings = num_embeddings
+        self.operation = operation
 
-class CompositionalEmbedding(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, num_partitions):
-        super(CompositionalEmbedding, self).__init__()
-        self.num_partitions = num_partitions
-        self.partition_dim = embedding_dim // num_partitions
+        # Check if the product of partition sizes can accommodate the number of users
+        product_of_partitions = 1
+        for size in partition_sizes:
+            product_of_partitions *= size
+        assert self.num_embeddings <= product_of_partitions, "The number of users must be <= product of partition sizes."
 
-        # Create sub-embedding tables for each partition
+        # Set partition embedding dimension
+        if operation == "concat":
+            # Split embedding dimension for concatenation
+            # we have to pay extra attention in this part as we want
+            # the concatenation of all partions to be equal to embedding_dim
+            # e.g., with embedding_dim=16, and len(partition_sizes)=3, we
+            # do not get the actual embedding_dim after concatenation
+            self.partition_dim = embedding_dim // len(partition_sizes)
+        else:
+            # Full embedding dimension for sum/multiply
+            self.partition_dim = embedding_dim
+
+        # Create embedding tables for each partition
         self.sub_embeddings = nn.ModuleList([
-            nn.Embedding(num_embeddings, self.partition_dim) for _ in range(num_partitions)
+            nn.Embedding(partition_size, self.partition_dim) for partition_size in partition_sizes
         ])
 
-    def forward(self, indices):
-        # Collect sub-embeddings from each partition
-        embeddings = [sub_emb(indices) for sub_emb in self.sub_embeddings]
+    def partition_user_ids(self, user_ids):
+        """
+        Assigns each user_id to an equivalence class in each partition.
+        """
+        partition_indices = []
+        for partition_size in self.partition_sizes:
+            # Each user_id is mapped to a class in the partition
+            partition_indices.append(user_ids % partition_size)
 
-        # Perform element-wise multiplication instead of concatenation
-        composed_embedding = embeddings[0]
-        for emb in embeddings[1:]:
-            # Element-wise multiplication
-            composed_embedding = composed_embedding * emb
+        return partition_indices
+
+    def forward(self, user_ids):
+        # Get partition indices for each user ID
+        partition_indices = self.partition_user_ids(user_ids)
+
+        # Collect embeddings from each partition
+        embeddings = []
+        for sub_emb, partition_idx in zip(self.sub_embeddings, partition_indices):
+            embeddings.append(sub_emb(partition_idx))
+
+        # Combine embeddings based on the specified operation
+        if self.operation == "concat":
+            composed_embedding = torch.cat(embeddings, dim=-1)
+        elif self.operation == "sum":
+            composed_embedding = torch.sum(torch.stack(embeddings), dim=0)
+        elif self.operation == "multiply":
+            composed_embedding = torch.prod(torch.stack(embeddings), dim=0)
 
         return composed_embedding
 
-
-class SimpleModel(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, num_partitions, output_dim=1):
-        super(SimpleModel, self).__init__()
-        self.embedding_layer = CompositionalEmbedding(num_embeddings, embedding_dim, num_partitions)
-
-        # A simple feed-forward network after the embedding
-        self.fc = nn.Linear(embedding_dim, output_dim)
-
-    def forward(self, user_id):
-        # Get the compositional embedding for the userId
-        embedding = self.embedding_layer(user_id)
-        output = self.fc(embedding)
-        return output
-
-
-# Hyperparameters
-# Total number of users
+# Example usage for user IDs
+# The number of users must be less than or equal to the product of partition sizes (20 * 10 * 8 = 1600)
 num_users = 1000
-# Size of the final user embedding
-embedding_dim = 32
-# Number of partitions to divide the embedding into, take >=3
-num_partitions = 4
-# Output dimension (for regression or binary classification)
-output_dim = 1
+# Original embedding dimension
+embedding_dim = 16
+# Sizes of each partition
+partition_sizes = [20, 10, 5, 3]
 
-# Create model, loss function, and optimizer
-model = SimpleModel(num_users, embedding_dim, num_partitions, output_dim)
-criterion = nn.MSELoss()  # Mean Squared Error Loss for regression
+
+class SimpleRecSys(nn.Module):
+    def __init__(self, num_users, embedding_dim, partition_sizes, operation="concat"):
+        super(SimpleRecSys, self).__init__()
+        # User embedding based on complementary partitioning
+        self.user_embedding = ComplementaryPartitionEmbedding(num_users, embedding_dim, partition_sizes, operation)
+
+        # A simple linear layer to predict the score from the user embedding
+        self.fc = nn.Linear(embedding_dim, 1)
+
+    def forward(self, user_ids):
+        # Get user embedding
+        user_emb = self.user_embedding(user_ids)
+
+        # Predict score using the linear layer
+        scores = self.fc(user_emb)
+        return scores
+
+
+# Dummy dataset
+# Example user IDs
+user_ids = torch.tensor([1, 5, 10, 50, 100, 200])
+# Example interaction scores (e.g., rating)
+interaction_scores = torch.tensor([1.0, 0.5, 0.8, 1.0, 0.3, 0.7])
+
+# Instantiate the recommendation system
+model = SimpleRecSys(num_users, embedding_dim, partition_sizes, "concat")
+criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Training Data (Example)
-user_ids = torch.randint(0, num_users, (1000,))  # Random user IDs
-targets = torch.rand(1000)  # Random target values (e.g., ratings, clicks)
-
-# Training Loop
-epochs = 10
-for epoch in range(epochs):
+# Training loop
+num_epochs = 100
+for epoch in range(num_epochs):
     model.train()
-
-    optimizer.zero_grad()
 
     # Forward pass
     predictions = model(user_ids)
-
-    # Compute loss
-    loss = criterion(predictions.squeeze(), targets)
+    loss = criterion(predictions.squeeze(), interaction_scores)
 
     # Backward pass and optimization
+    optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
-    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+    # Print loss for every 10th epoch
+    if epoch % 10 == 0:
+        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}')
 
-# Get embedding for a test userId
-test_user_id = torch.tensor([5])  # Example test user ID
+print("Training completed!")
+
+# Inference for a test user (e.g., user ID 10)
+test_user_id = torch.tensor([10])
+
+# Set the model to evaluation mode
 model.eval()
-with torch.no_grad():
-    test_user_embedding = model.embedding_layer(test_user_id)
 
-print("Test User Embedding:", test_user_embedding)
+# Get user embedding and predicted score
+with torch.no_grad():
+    user_embedding = model.user_embedding(test_user_id)
+    predicted_score = model(test_user_id)
+
+print(f"User Embedding for User ID {test_user_id.item()}: {user_embedding}")
+print(f"Predicted Score for User ID {test_user_id.item()}: {predicted_score.item()}")
