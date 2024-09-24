@@ -9,7 +9,7 @@
    2.2. Double Hashing Method [code link](https://github.com/elahehraisi/Hashing/blob/main/double_hashing.py)
 
    
-   2.3. Hybrid Hashing with frequency [code link] (https://github.com/elahehraisi/Hashing/blob/main/hybrid_hashing.py)
+   2.3. Hybrid Hashing with frequency [code link](https://github.com/elahehraisi/Hashing/blob/main/hybrid_hashing.py)
 
    
    2.4. Quotient-Remainder [code link](https://github.com/elahehraisi/Hashing/blob/main/Quotient-Remainder.py)
