@@ -1,6 +1,8 @@
 # Hashing Tricks in Machine Learning
 1. Hashing Trick in NLP for Dimensionality Reduction: [code link](https://github.com/elahehraisi/Hashing/blob/main/hashing_nlp.py)
 2. Hashing Trick with Embedding for Categorical Features
+
+
    2.1. One hashing function [code link](https://github.com/elahehraisi/Hashing/blob/main/hashing_embedding_one_hash.py)
    2.2. Double Hashing Method [code link](https://github.com/elahehraisi/Hashing/blob/main/double_hashing.py)
    2.3. Hybrid Hashing with frequency [code link] (https://github.com/elahehraisi/Hashing/blob/main/hybrid_hashing.py)
